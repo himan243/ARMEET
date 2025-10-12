@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARMEET - Secure Cadet Communication</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+    <style>
+        /* Custom scrollbar for a more modern look */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #2d3748; }
+        ::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #718096; }
+        .message-bubble { max-width: 75%; }
+        .status-safe { color: #48bb78; } /* green-500 */
+        .status-alert { color: #f6e05e; } /* yellow-400 */
+        .status-enroute { color: #63b3ed; } /* blue-400 */
+        .status-danger { color: #f56565; } /* red-500 */
+        /* Simple loading spinner */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Cipher button active state */
+        .cipher-btn-active {
+            background-color: #f56565; /* red-500 */
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white font-sans antialiased">
+
+    <div id="app-container" class="container mx-auto max-w-4xl h-screen flex flex-col p-4">
+
+        <div id="loading-screen" class="flex flex-col items-center justify-center h-full">
+            <div class="loader"></div>
+            <p class="mt-4 text-lg text-gray-400">Initializing Secure Connection...</p>
+        </div>
+
+        <div id="login-screen" class="hidden flex-col items-center justify-center h-full">
+            <h1 class="text-5xl font-bold text-green-400 tracking-wider">ARMEET</h1>
+            <p class="text-gray-400 mt-2">Select your assigned group to proceed.</p>
+            <div class="mt-8 space-y-4 w-full max-w-xs">
+                <button data-group="General" class="group-btn w-full bg-gray-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition duration-300">
+                    Join General
+                </button>
+                <button data-group="Team1" class="group-btn w-full bg-gray-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition duration-300">
+                    Join Team 1
+                </button>
+                <button data-group="Team2" class="group-btn w-full bg-gray-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition duration-300">
+                    Join Team 2
+                </button>
+            </div>
+            <div id="user-id-display" class="mt-8 text-center text-xs text-gray-500"></div>
+        </div>
+        
+        <div id="login-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4">
+            <div class="bg-gray-800 p-8 rounded-lg shadow-2xl w-full max-w-sm">
+                <h2 id="modal-title" class="text-2xl font-bold mb-6 text-center">Enter Room Credentials</h2>
+                <form id="login-form">
+                    <div class="mb-4">
+                        <label for="room-id" class="block text-gray-400 text-sm font-bold mb-2">Room ID</label>
+                        <input id="room-id" type="text" class="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-white leading-tight focus:outline-none focus:shadow-outline border-gray-600" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="room-password" class="block text-gray-400 text-sm font-bold mb-2">Room Password</label>
+                        <input id="room-password" type="password" class="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-white leading-tight focus:outline-none focus:shadow-outline border-gray-600" required>
+                    </div>
+                    <div class="mb-6">
+                        <label for="user-name" class="block text-gray-400 text-sm font-bold mb-2">Your Name</label>
+                        <input id="user-name" type="text" class="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-white leading-tight focus:outline-none focus:shadow-outline border-gray-600" required>
+                    </div>
+                    <div id="login-error" class="text-red-500 text-xs italic mb-4 text-center"></div>
+                    <div class="flex items-center justify-between">
+                        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline w-full transition duration-300">
+                            Enter Secure Room
+                        </button>
+                    </div>
+                     <button id="close-modal-btn" type="button" class="mt-4 w-full text-gray-400 hover:text-white text-sm">Cancel</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="cipher-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4">
+            <div class="bg-gray-800 p-8 rounded-lg shadow-2xl w-full max-w-sm">
+                <h2 class="text-2xl font-bold mb-6 text-center">Decrypt Message</h2>
+                <form id="cipher-form">
+                    <div class="mb-4">
+                        <label for="cipher-phrase" class="block text-gray-400 text-sm font-bold mb-2">Enter Decryption Phrase</label>
+                        <input id="cipher-phrase" type="password" class="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-white leading-tight focus:outline-none focus:shadow-outline border-gray-600" required>
+                    </div>
+                    <div id="cipher-error" class="text-red-500 text-xs italic mb-4 text-center"></div>
+                    <div class="flex items-center justify-between">
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline w-full transition duration-300">
+                            Decrypt
+                        </button>
+                    </div>
+                     <button id="close-cipher-modal-btn" type="button" class="mt-4 w-full text-gray-400 hover:text-white text-sm">Cancel</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="chat-screen" class="hidden flex-1 flex-col h-full bg-gray-800 rounded-lg shadow-xl overflow-hidden">
+            
+            <div class="flex items-center justify-between p-4 bg-gray-900 border-b border-gray-700">
+                <div>
+                    <h2 id="chat-room-name" class="text-xl font-bold text-green-400"></h2>
+                    <p id="chat-user-name" class="text-sm text-gray-400"></p>
+                </div>
+                <div class="flex items-center">
+                     <select id="status-selector" class="bg-gray-700 border border-gray-600 rounded-md py-1 px-2 text-sm focus:outline-none">
+                        <option value="safe">Status: Safe</option>
+                        <option value="alert">Status: Alert</option>
+                        <option value="enroute">Status: En-route</option>
+                        <option value="danger">Status: Danger</option>
+                    </select>
+                    <button id="roster-btn" class="hidden ml-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 text-sm">Roster</button>
+                    <button id="logout-btn" class="ml-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 text-sm">Logout</button>
+                </div>
+            </div>
+
+            <div id="messages-container" class="flex-1 p-4 overflow-y-auto space-y-4">
+                
+            </div>
+            
+            <div id="roster-screen" class="hidden flex-1 flex-col p-4 overflow-y-auto">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold text-gray-300">Team Roster</h3>
+                    <button id="back-to-chat-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 text-sm">Back to Chat</button>
+                </div>
+                <div id="roster-list" class="space-y-2">
+                    
+                </div>
+            </div>
+
+            <div id="input-area">
+                
+                <div class="p-2 bg-gray-900 border-t border-gray-700">
+                    <p class="text-xs text-gray-400 mb-2 px-2">Quick Messages:</p>
+                    <div class="flex flex-wrap gap-2">
+                        <button class="quick-msg-btn">Roger that.</button>
+                        <button class="quick-msg-btn">On my way.</button>
+                        <button class="quick-msg-btn">Enemy sighted.</button>
+                        <button class="quick-msg-btn">Need backup.</button>
+                        <button class="quick-msg-btn">Hold position.</button>
+                    </div>
+                </div>
+
+                <form id="message-form" class="p-4 bg-gray-900 border-t border-gray-700 flex items-center gap-2">
+                    <input id="message-input" type="text" placeholder="Type an encrypted message..." class="flex-1 bg-gray-700 rounded-lg p-3 focus:outline-none text-white" autocomplete="off">
+                    <button id="cipher-toggle-btn" type="button" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-4 rounded-lg transition duration-300 text-sm">
+                        Cipher OFF
+                    </button>
+                    <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300">Send</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import Firebase functions
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, collection, addDoc, query, onSnapshot, serverTimestamp, orderBy, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // IMPORTANT: This key MUST be the same in your admin.html file.
+        const MASTER_ENCRYPTION_KEY = "your-super-secret-master-key-for-db-encryption";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyC51LUuuM36bbmvVJMGLctxKmGzJXyjMN0",
+            authDomain: "armeet-69b77.firebaseapp.com",
+            projectId: "armeet-69b77",
+            storageBucket: "armeet-69b77.firebasestorage.app",
+            messagingSenderId: "1014300962701",
+            appId: "1:1014300962701:web:f6c3cfc64ded46566417c4",
+            measurementId: "G-SY79E7B43T"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // App state variables
+        let currentUser = null;
+        let currentRoom = null;
+        let currentRoomPassword = null;
+        let currentUserName = null;
+        let currentRoomCipherPhrase = null;
+        let isCipherMode = false;
+        let messageToDecryptElement = null;
+        let unsubscribeMessages = null;
+        let unsubscribeMembers = null; // Listener for member statuses
+        let roomMembers = {}; // Object to store member statuses
+
+        // HTML Element References
+        const loadingScreen = document.getElementById('loading-screen');
+        const loginScreen = document.getElementById('login-screen');
+        const loginModal = document.getElementById('login-modal');
+        const loginForm = document.getElementById('login-form');
+        const chatScreen = document.getElementById('chat-screen');
+        const messagesContainer = document.getElementById('messages-container');
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('message-input');
+        const logoutBtn = document.getElementById('logout-btn');
+        const modalTitle = document.getElementById('modal-title');
+        const loginError = document.getElementById('login-error');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const statusSelector = document.getElementById('status-selector');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const rosterBtn = document.getElementById('roster-btn');
+        const rosterScreen = document.getElementById('roster-screen');
+        const rosterList = document.getElementById('roster-list');
+        const backToChatBtn = document.getElementById('back-to-chat-btn');
+        const inputArea = document.getElementById('input-area');
+        const cipherToggleBtn = document.getElementById('cipher-toggle-btn');
+        const cipherModal = document.getElementById('cipher-modal');
+        const cipherForm = document.getElementById('cipher-form');
+        const closeCipherModalBtn = document.getElementById('close-cipher-modal-btn');
+        const cipherError = document.getElementById('cipher-error');
+        const cipherPhraseInput = document.getElementById('cipher-phrase');
+        
+        // --- ENCRYPTION & DECRYPTION ---
+        function encryptMessage(text, key) {
+            try { return CryptoJS.AES.encrypt(text, key).toString(); } 
+            catch (e) { console.error("Encryption failed:", e); return text; }
+        }
+
+        function decryptMessage(encryptedText, key) {
+            if (!encryptedText || !key) return "DECRYPTION FAILED";
+            try {
+                const bytes = CryptoJS.AES.decrypt(encryptedText, key);
+                const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+                return decrypted || "DECRYPTION FAILED";
+            } catch (e) { console.error("Decryption failed:", e); return "DECRYPTION FAILED"; }
+        }
+        
+        // --- AUTHENTICATION ---
+        // ** THE FIX IS HERE **
+        // We explicitly set persistence to avoid login loops in certain browser environments.
+        setPersistence(auth, browserLocalPersistence)
+            .then(() => {
+                // Now that persistence is set, we can initialize the auth state listener.
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        // User is signed in.
+                        currentUser = user;
+                        loadingScreen.classList.add('hidden');
+                        loginScreen.classList.remove('hidden');
+                        loginScreen.classList.add('flex');
+                        userIdDisplay.innerHTML = `Your Unique ID: <span class="font-mono text-green-400">${currentUser.uid}</span><br>(Admin will use this to assign you to a team)`;
+                    } else {
+                        // No user is signed in. Sign in anonymously.
+                        signInAnonymously(auth).catch((error) => {
+                            console.error("Anonymous sign-in failed:", error);
+                            let errorMessage = "<p class='text-red-400'>Fatal Error: Could not establish secure connection.</p>";
+                             if (error.code === 'auth/configuration-not-found') {
+                                errorMessage = `<div class="text-center text-red-400 p-4"><p class="font-bold text-lg mb-2">Authentication Error</p><p>Anonymous Sign-In is not enabled in Firebase.</p><p class="mt-4 text-sm text-gray-300"><b>Admin Action:</b> Go to Firebase Console > Authentication > Sign-in method, and enable <b>Anonymous</b>.</p></div>`;
+                            }
+                            loadingScreen.innerHTML = errorMessage;
+                        });
+                    }
+                });
+            })
+            .catch((error) => {
+                console.error("Error setting auth persistence:", error);
+                loadingScreen.innerHTML = `<p class="text-red-400">Could not initialize session storage. Please ensure cookies are enabled.</p>`;
+            });
+
+        // --- UI EVENT LISTENERS ---
+        document.querySelectorAll('.group-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                currentRoom = button.dataset.group;
+                modalTitle.textContent = `Enter ${currentRoom} Room`;
+                loginModal.classList.remove('hidden');
+                loginModal.classList.add('flex');
+            });
+        });
+        
+        closeModalBtn.addEventListener('click', () => {
+            loginModal.classList.add('hidden');
+            loginForm.reset();
+            loginError.textContent = '';
+        });
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const roomIdInput = document.getElementById('room-id').value.trim();
+            const roomPasswordInput = document.getElementById('room-password').value.trim();
+            const userName = document.getElementById('user-name').value.trim();
+            if (!roomIdInput || !roomPasswordInput || !userName) return;
+            loginError.textContent = 'Authenticating...';
+
+            try {
+                const roomDocRef = doc(db, "rooms", currentRoom);
+                const roomDocSnap = await getDoc(roomDocRef);
+                if (!roomDocSnap.exists()) { loginError.textContent = 'Error: Room does not exist.'; return; }
+                
+                const roomData = roomDocSnap.data();
+
+                // Decrypt data from Firestore before checking
+                const decryptedRoomId = decryptMessage(roomData.roomId, MASTER_ENCRYPTION_KEY);
+                const decryptedPassword = decryptMessage(roomData.password, MASTER_ENCRYPTION_KEY);
+                const decryptedCipherPhrase = decryptMessage(roomData.cipherPhrase, MASTER_ENCRYPTION_KEY);
+
+                if (decryptedRoomId !== roomIdInput || decryptedPassword !== roomPasswordInput) { loginError.textContent = 'Invalid Room ID or Password.'; return; }
+                if ((currentRoom === 'Team1' || currentRoom === 'Team2') && (!roomData.allowedUsers || !roomData.allowedUsers.includes(currentUser.uid))) {
+                     loginError.textContent = `Access Denied. You are not assigned to ${currentRoom}.`;
+                     return;
+                }
+                
+                currentRoomPassword = roomPasswordInput; // Use the user-provided password for message crypto
+                currentUserName = userName;
+                currentRoomCipherPhrase = decryptedCipherPhrase;
+
+                const userDocRef = doc(db, "users", currentUser.uid);
+                await setDoc(userDocRef, { name: userName, lastLogin: serverTimestamp() }, { merge: true });
+                
+                if (currentRoom !== 'General') {
+                    await updateUserStatus('safe');
+                    rosterBtn.classList.remove('hidden');
+                    listenToMemberStatuses();
+                    cipherToggleBtn.classList.remove('hidden');
+                } else {
+                    cipherToggleBtn.classList.add('hidden');
+                }
+
+                loginScreen.classList.add('hidden');
+                loginModal.classList.add('hidden');
+                chatScreen.classList.remove('hidden');
+                chatScreen.classList.add('flex');
+                document.getElementById('chat-room-name').textContent = `Room: ${currentRoom}`;
+                document.getElementById('chat-user-name').textContent = `Logged in as: ${currentUserName}`;
+                loadMessages();
+            } catch (error) {
+                console.error("Login failed:", error);
+                loginError.textContent = 'A network or server error occurred.';
+            }
+        });
+
+        // --- REAL-TIME CHAT & STATUS LOGIC ---
+        function renderMessages(messages) {
+            messagesContainer.innerHTML = '';
+            messages.forEach(msgData => {
+                const decryptedText = decryptMessage(msgData.text, currentRoomPassword);
+                const messageElement = document.createElement('div');
+                messageElement.classList.add('flex', 'flex-col', 'message-bubble', 'p-3', 'rounded-xl');
+                const isSentByUser = msgData.senderId === currentUser.uid;
+
+                if (isSentByUser) {
+                    messageElement.classList.add('bg-green-700', 'self-end', 'rounded-br-none');
+                } else {
+                    messageElement.classList.add('bg-gray-600', 'self-start', 'rounded-bl-none');
+                }
+                
+                const senderName = isSentByUser ? 'You' : msgData.senderName;
+                const memberStatus = (msgData.status) 
+                    ? `<span class="text-xs font-semibold ml-2 status-${msgData.status}">(${msgData.status})</span>`
+                    : '';
+                
+                let messageContentHTML = `<p class="text-white break-words">${decryptedText}</p>`;
+                
+                if (msgData.isCiphered) {
+                    messageElement.dataset.content = decryptedText;
+                    messageElement.classList.add('cursor-pointer', 'border-2', 'border-dashed', 'border-yellow-400');
+                    messageContentHTML = `<p class="text-yellow-300 italic">[Ciphered Message - Double-click to decrypt]</p>`;
+
+                    messageElement.addEventListener('dblclick', () => {
+                        if (messageElement.dataset.decrypted === 'true') return;
+                        if (!currentRoomCipherPhrase) {
+                            alert('This room has no cipher phrase set by the admin. Cannot decrypt.');
+                            return;
+                        }
+                        messageToDecryptElement = messageElement;
+                        cipherModal.classList.remove('hidden');
+                        cipherModal.classList.add('flex');
+                        cipherPhraseInput.focus();
+                    });
+                }
+
+                messageElement.innerHTML = `
+                    <p class="font-bold text-sm ${isSentByUser ? 'text-green-200' : 'text-gray-300'}">${senderName}${memberStatus}</p>
+                    ${messageContentHTML}
+                    <p class="text-xs text-gray-400 self-end mt-1">${msgData.timestamp ? msgData.timestamp.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</p>
+                `;
+                messagesContainer.appendChild(messageElement);
+            });
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function loadMessages() {
+            if (unsubscribeMessages) unsubscribeMessages();
+            const messagesCol = collection(db, "chats", currentRoom, "messages");
+            const q = query(messagesCol, orderBy("timestamp"));
+            unsubscribeMessages = onSnapshot(q, (snapshot) => {
+                const messages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderMessages(messages);
+            }, (error) => {
+                console.error("Error listening to messages:", error);
+                messagesContainer.innerHTML = `<p class="text-center text-red-400">Connection to chat lost.</p>`;
+            });
+        }
+        
+        function listenToMemberStatuses() {
+            if (unsubscribeMembers) unsubscribeMembers();
+            const membersCol = collection(db, "rooms", currentRoom, "members");
+            unsubscribeMembers = onSnapshot(membersCol, (snapshot) => {
+                snapshot.docs.forEach(doc => {
+                    roomMembers[doc.id] = doc.data();
+                });
+                updateRosterView();
+            });
+        }
+
+        function updateRosterView() {
+            if (!rosterList) return;
+            rosterList.innerHTML = '';
+            Object.values(roomMembers).sort((a,b) => a.name.localeCompare(b.name)).forEach(member => {
+                const rosterItem = document.createElement('div');
+                rosterItem.className = 'flex justify-between items-center bg-gray-700 p-3 rounded-lg';
+                rosterItem.innerHTML = `
+                    <span class="font-semibold">${member.name}</span>
+                    <span class="font-bold status-${member.status}">${member.status.charAt(0).toUpperCase() + member.status.slice(1)}</span>
+                `;
+                rosterList.appendChild(rosterItem);
+            });
+        }
+
+        async function sendMessage(text) {
+             if (!text.trim()) return;
+            const encryptedText = encryptMessage(text, currentRoomPassword);
+
+            const messageData = {
+                text: encryptedText,
+                senderName: currentUserName,
+                senderId: currentUser.uid,
+                timestamp: serverTimestamp()
+            };
+
+            if (currentRoom !== 'General') {
+                messageData.status = statusSelector.value;
+            }
+            if (isCipherMode) {
+                messageData.isCiphered = true;
+            }
+
+            try {
+                await addDoc(collection(db, "chats", currentRoom, "messages"), messageData);
+            } catch (error) { console.error("Error sending message:", error); }
+        }
+        
+        messageForm.addEventListener('submit', (e) => { 
+            e.preventDefault(); 
+            sendMessage(messageInput.value); 
+            messageInput.value = ''; 
+        });
+        document.querySelectorAll('.quick-msg-btn').forEach(button => { button.addEventListener('click', () => sendMessage(button.textContent)); button.classList.add('bg-gray-700', 'hover:bg-gray-600', 'text-white', 'text-sm', 'font-semibold', 'py-1', 'px-3', 'rounded-full', 'transition', 'duration-200'); });
+        
+        cipherToggleBtn.addEventListener('click', () => {
+            isCipherMode = !isCipherMode;
+            if (isCipherMode) {
+                cipherToggleBtn.classList.add('cipher-btn-active');
+                cipherToggleBtn.textContent = 'Cipher ON';
+            } else {
+                cipherToggleBtn.classList.remove('cipher-btn-active');
+                cipherToggleBtn.textContent = 'Cipher OFF';
+            }
+        });
+
+        async function updateUserStatus(status) {
+            if (currentRoom === 'General') return;
+            try {
+                const userStatusRef = doc(db, "rooms", currentRoom, "members", currentUser.uid);
+                await setDoc(userStatusRef, { name: currentUserName, status: status, lastUpdated: serverTimestamp() }, { merge: true });
+            } catch(error) { console.error("Failed to update status: ", error); }
+        }
+        statusSelector.addEventListener('change', (e) => updateUserStatus(e.target.value));
+
+        // --- Cipher Modal Logic ---
+        closeCipherModalBtn.addEventListener('click', () => {
+            cipherModal.classList.add('hidden');
+            cipherForm.reset();
+            cipherError.textContent = '';
+            messageToDecryptElement = null;
+        });
+
+        cipherForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const phrase = cipherPhraseInput.value.trim();
+            if (phrase === currentRoomCipherPhrase) {
+                const originalContent = messageToDecryptElement.dataset.content;
+                const textParagraph = messageToDecryptElement.querySelector('p:nth-child(2)');
+                textParagraph.innerHTML = `<p class="text-white break-words">${originalContent}</p>`;
+                messageToDecryptElement.classList.remove('cursor-pointer', 'border-2', 'border-dashed', 'border-yellow-400');
+                messageToDecryptElement.dataset.decrypted = 'true';
+                closeCipherModalBtn.click();
+            } else {
+                cipherError.textContent = 'Incorrect phrase.';
+            }
+        });
+
+        // --- View Toggling ---
+        function showChatView() {
+            messagesContainer.classList.remove('hidden');
+            inputArea.classList.remove('hidden');
+            rosterScreen.classList.add('hidden');
+        }
+
+        function showRosterView() {
+            messagesContainer.classList.add('hidden');
+            inputArea.classList.add('hidden');
+            rosterScreen.classList.remove('hidden');
+            rosterScreen.classList.add('flex');
+        }
+        rosterBtn.addEventListener('click', showRosterView);
+        backToChatBtn.addEventListener('click', showChatView);
+
+        // --- Logout Logic ---
+        function resetState() {
+             if (unsubscribeMessages) unsubscribeMessages();
+            if (unsubscribeMembers) unsubscribeMembers();
+            currentRoom = null; currentRoomPassword = null; currentUserName = null; currentRoomCipherPhrase = null;
+            unsubscribeMessages = null; unsubscribeMembers = null; roomMembers = {};
+            isCipherMode = false;
+            cipherToggleBtn.classList.remove('cipher-btn-active');
+            cipherToggleBtn.textContent = 'Cipher OFF';
+            cipherToggleBtn.classList.add('hidden');
+        }
+
+        logoutBtn.addEventListener('click', () => {
+            resetState();
+            chatScreen.classList.add('hidden');
+            loginScreen.classList.remove('hidden');
+            loginScreen.classList.add('flex');
+            loginForm.reset();
+            loginError.textContent = '';
+            rosterBtn.classList.add('hidden');
+            showChatView();
+        });
+
+    </script>
+</body>
+</html>
+

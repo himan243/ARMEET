@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARMEET - Admin Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+    <style>
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-800 text-gray-200 font-sans">
+
+    <!-- Main Container -->
+    <div id="app-container" class="container mx-auto p-4 md:p-8">
+
+        <!-- Loading Screen -->
+        <div id="loading-screen" class="flex flex-col items-center justify-center h-screen">
+            <div class="loader"></div>
+            <p class="mt-4 text-lg text-gray-400">Loading Admin Panel...</p>
+        </div>
+
+        <!-- Phone Login Screen -->
+        <div id="login-screen" class="hidden max-w-md mx-auto mt-16 bg-gray-900 p-8 rounded-lg shadow-xl">
+            <h1 class="text-3xl font-bold text-center text-green-400 mb-6">Admin Authentication</h1>
+            <p class="text-center text-gray-400 mb-6">Enter the registered admin mobile number to receive an OTP.</p>
+            <form id="phone-login-form">
+                <div class="mb-4">
+                    <label for="phone-number" class="block text-gray-400 text-sm font-bold mb-2">Mobile Number (with country code)</label>
+                    <input id="phone-number" type="tel" placeholder="+911234567890" class="shadow appearance-none border rounded w-full py-3 px-4 bg-gray-700 text-white leading-tight focus:outline-none focus:shadow-outline border-gray-600" required>
+                </div>
+                <!-- reCAPTCHA container -->
+                <div id="recaptcha-container" class="mb-4"></div>
+                <button id="send-otp-btn" type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300">
+                    Send OTP
+                </button>
+            </form>
+            <form id="otp-verify-form" class="hidden mt-6">
+                 <div class="mb-4">
+                    <label for="otp-code" class="block text-gray-400 text-sm font-bold mb-2">Enter OTP</label>
+                    <input id="otp-code" type="text" inputmode="numeric" pattern="\d{6}" maxlength="6" class="shadow appearance-none border rounded w-full py-3 px-4 bg-gray-700 text-white leading-tight focus:outline-none focus:shadow-outline border-gray-600" required>
+                </div>
+                <button id="verify-otp-btn" type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300">
+                    Verify & Login
+                </button>
+            </form>
+            <div id="auth-error" class="text-red-500 text-center mt-4"></div>
+        </div>
+
+        <!-- Admin Dashboard -->
+        <div id="dashboard" class="hidden">
+            <div class="flex justify-between items-center mb-8">
+                <h1 class="text-4xl font-bold text-green-400">Admin Dashboard</h1>
+                <button id="admin-logout-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Logout</button>
+            </div>
+
+            <!-- Room Management -->
+            <div class="bg-gray-900 p-6 rounded-lg shadow-xl mb-8">
+                <div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
+                    <h2 class="text-2xl font-semibold">Room Management</h2>
+                    <button id="encrypt-all-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-lg">Encrypt & Save All Rooms</button>
+                </div>
+                <div id="room-list" class="space-y-6">
+                    <!-- Room data will be populated here -->
+                </div>
+                <button id="add-room-btn" class="mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg">Add New Room</button>
+            </div>
+
+            <!-- User Management -->
+            <div class="bg-gray-900 p-6 rounded-lg shadow-xl">
+                <h2 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2">User Management</h2>
+                 <p class="text-sm text-gray-400 mb-4">Assign users to Team Rooms. Users must join 'General' at least once to appear here.</p>
+                <div id="user-list" class="space-y-4">
+                    <!-- User data will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, collection, getDocs, updateDoc, setDoc, addDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyC51LUuuM36bbmvVJMGLctxKmGzJXyjMN0",
+            authDomain: "armeet-69b77.firebaseapp.com",
+            projectId: "armeet-69b77",
+            storageBucket: "armeet-69b77.firebasestorage.app",
+            messagingSenderId: "1014300962701",
+            appId: "1:1014300962701:web:f6c3cfc64ded46566417c4",
+            measurementId: "G-SY79E7B43T"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        
+        // --- SECURITY CONFIGURATION ---
+        // IMPORTANT: Change this phone number to your actual admin phone number with the country code.
+        const ADMIN_PHONE_NUMBER = "+911234567890"; // <-- REPLACE THIS
+        
+        // IMPORTANT: This key MUST be the same in your main index.html file.
+        const MASTER_ENCRYPTION_KEY = "your-super-secret-master-key-for-db-encryption";
+
+        // --- DOM Elements ---
+        const loadingScreen = document.getElementById('loading-screen');
+        const loginScreen = document.getElementById('login-screen');
+        const dashboard = document.getElementById('dashboard');
+        const phoneLoginForm = document.getElementById('phone-login-form');
+        const otpVerifyForm = document.getElementById('otp-verify-form');
+        const phoneNumberInput = document.getElementById('phone-number');
+        const sendOtpBtn = document.getElementById('send-otp-btn');
+        const verifyOtpBtn = document.getElementById('verify-otp-btn');
+        const otpInput = document.getElementById('otp-code');
+        const authError = document.getElementById('auth-error');
+        const roomList = document.getElementById('room-list');
+        const userList = document.getElementById('user-list');
+        const addRoomBtn = document.getElementById('add-room-btn');
+        const adminLogoutBtn = document.getElementById('admin-logout-btn');
+        const encryptAllBtn = document.getElementById('encrypt-all-btn');
+
+        let confirmationResult = null;
+        let roomsData = {};
+        let usersData = {};
+        let teamRooms = [];
+
+        // --- ENCRYPTION HELPERS ---
+        function encryptData(text, key) {
+            if (!text) return text; // Don't encrypt null/empty strings
+            try { return CryptoJS.AES.encrypt(text, key).toString(); } 
+            catch (e) { console.error("Encryption failed:", e); return text; }
+        }
+
+        function decryptData(encryptedText, key) {
+            if (!encryptedText) return encryptedText; // Don't decrypt null/empty strings
+            try {
+                const bytes = CryptoJS.AES.decrypt(encryptedText, key);
+                const originalText = bytes.toString(CryptoJS.enc.Utf8);
+                // If decryption results in empty string, it might be unencrypted data. Return original.
+                return originalText || encryptedText;
+            } catch (e) {
+                console.error("Decryption failed, returning original text:", e);
+                return encryptedText; // Return original text on failure
+            }
+        }
+
+        // --- AUTHENTICATION ---
+        
+        async function checkAdminStatus(user) {
+            if (!user) {
+                showLogin();
+                return;
+            }
+
+            // Check if the logged-in user's phone number matches the hardcoded admin number
+            if (user.phoneNumber === ADMIN_PHONE_NUMBER) {
+                showDashboard();
+            } else {
+                await signOut(auth);
+                authError.textContent = 'Access Denied. This phone number is not registered as an admin.';
+                showLogin();
+            }
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            checkAdminStatus(user);
+        });
+
+        window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+            'size': 'invisible',
+            'callback': (response) => { /* reCAPTCHA solved */ }
+        });
+
+        phoneLoginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            authError.textContent = '';
+            const phoneNumber = phoneNumberInput.value.trim();
+            if (!phoneNumber) return;
+            sendOtpBtn.disabled = true;
+            sendOtpBtn.textContent = 'Sending...';
+
+            try {
+                confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, window.recaptchaVerifier);
+                phoneLoginForm.classList.add('hidden');
+                otpVerifyForm.classList.remove('hidden');
+                otpInput.focus();
+            } catch (error) {
+                console.error("OTP send error:", error);
+                if (error.code === 'auth/internal-error') {
+                    authError.innerHTML = `
+                        <div class="text-left p-3 bg-red-900 border border-red-700 rounded-md">
+                            <p class="font-bold">Project Configuration Error</p>
+                            <p class="text-sm mt-2">This usually means the domain you're using isn't authorized.</p>
+                            <p class="text-sm mt-2 font-bold">Admin Action:</p>
+                            <ol class="list-decimal list-inside text-xs mt-1">
+                                <li>Go to Firebase Console > Authentication > Settings.</li>
+                                <li>Under "Authorized domains", click "Add domain".</li>
+                                <li>Add the domain you are testing from (e.g., <strong>localhost</strong>).</li>
+                            </ol>
+                        </div>
+                    `;
+                } else if (error.code === 'auth/billing-not-enabled') {
+                    authError.innerHTML = `
+                        <div class="text-left p-3 bg-red-900 border border-red-700 rounded-md">
+                            <p class="font-bold">Billing Not Enabled</p>
+                            <p class="text-sm mt-2">Your project has exceeded the free quota for Phone Authentication.</p>
+                            <p class="text-sm mt-2 font-bold">Admin Action:</p>
+                             <ol class="list-decimal list-inside text-xs mt-1">
+                                <li>Go to your Firebase Console.</li>
+                                <li>Click the gear icon > Project settings.</li>
+                                <li>Go to the "Usage and billing" tab.</li>
+                                <li>Upgrade your project to the <strong>Blaze (pay-as-you-go)</strong> plan.</li>
+                            </ol>
+                        </div>
+                    `;
+                }
+                else {
+                    authError.textContent = error.message;
+                }
+            } finally {
+                sendOtpBtn.disabled = false;
+                sendOtpBtn.textContent = 'Send OTP';
+            }
+        });
+
+        otpVerifyForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const code = otpInput.value.trim();
+            if (!code || !confirmationResult) return;
+            verifyOtpBtn.disabled = true;
+            verifyOtpBtn.textContent = 'Verifying...';
+            try {
+                await confirmationResult.confirm(code);
+                // onAuthStateChanged will handle showing the dashboard
+            } catch (error) {
+                console.error("OTP verification error:", error);
+                authError.textContent = 'Invalid OTP. Please try again.';
+            } finally {
+                 verifyOtpBtn.disabled = false;
+                 verifyOtpBtn.textContent = 'Verify & Login';
+            }
+        });
+
+        adminLogoutBtn.addEventListener('click', () => {
+            signOut(auth);
+        });
+        
+        // --- UI VISIBILITY ---
+        function showLogin() {
+            loadingScreen.classList.add('hidden');
+            dashboard.classList.add('hidden');
+            loginScreen.classList.remove('hidden');
+        }
+
+        async function showDashboard() {
+            loadingScreen.classList.add('hidden');
+            loginScreen.classList.add('hidden');
+            dashboard.classList.remove('hidden');
+            await loadData();
+        }
+
+        // --- DATA LOADING & RENDERING ---
+        async function loadData() {
+            // Fetch Rooms
+            const roomsSnapshot = await getDocs(collection(db, "rooms"));
+            roomsData = {};
+            teamRooms = [];
+            roomsSnapshot.forEach(doc => {
+                roomsData[doc.id] = { id: doc.id, ...doc.data() };
+                 if (doc.id !== 'General') teamRooms.push(doc.id);
+            });
+
+            // Fetch Users
+            const usersSnapshot = await getDocs(collection(db, "users"));
+            usersData = {};
+            usersSnapshot.forEach(doc => {
+                usersData[doc.id] = { id: doc.id, ...doc.data() };
+            });
+
+            renderRooms();
+            renderUsers();
+        }
+
+        function renderRooms() {
+            roomList.innerHTML = '';
+            Object.values(roomsData).forEach(room => {
+                // Decrypt data for display
+                const decryptedRoomId = decryptData(room.roomId, MASTER_ENCRYPTION_KEY);
+                const decryptedPassword = decryptData(room.password, MASTER_ENCRYPTION_KEY);
+                const decryptedCipherPhrase = decryptData(room.cipherPhrase, MASTER_ENCRYPTION_KEY);
+
+                const roomEl = document.createElement('div');
+                roomEl.className = 'bg-gray-800 p-4 rounded-lg';
+                roomEl.innerHTML = `
+                    <h3 class="text-xl font-bold text-green-300 mb-4">${room.id}</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="text-xs text-gray-400">Room ID</label>
+                            <input data-id="${room.id}" data-field="roomId" class="w-full bg-gray-700 p-2 rounded mt-1" value="${decryptedRoomId || ''}">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-400">Password</label>
+                            <input data-id="${room.id}" data-field="password" class="w-full bg-gray-700 p-2 rounded mt-1" value="${decryptedPassword || ''}">
+                        </div>
+                        ${room.id !== 'General' ? `
+                        <div>
+                            <label class="text-xs text-gray-400">Cipher Phrase</label>
+                            <input data-id="${room.id}" data-field="cipherPhrase" class="w-full bg-gray-700 p-2 rounded mt-1" value="${decryptedCipherPhrase || ''}">
+                        </div>` : ''}
+                    </div>
+                    <button data-id="${room.id}" class="save-room-btn mt-4 bg-green-600 hover:bg-green-700 text-white text-sm font-bold py-2 px-4 rounded">Save Changes</button>
+                `;
+                roomList.appendChild(roomEl);
+            });
+        }
+
+        function renderUsers() {
+            userList.innerHTML = '';
+            Object.values(usersData).forEach(user => {
+                const userEl = document.createElement('div');
+                userEl.className = 'bg-gray-800 p-4 rounded-lg flex items-center justify-between';
+
+                let optionsHTML = '';
+                teamRooms.forEach(roomName => {
+                    const room = roomsData[roomName];
+                    const isMember = room.allowedUsers && room.allowedUsers.includes(user.id);
+                    optionsHTML += `
+                        <label class="flex items-center space-x-2">
+                            <input type="checkbox" data-uid="${user.id}" data-room="${roomName}" class="user-assignment-cb bg-gray-600" ${isMember ? 'checked' : ''}>
+                            <span>${roomName}</span>
+                        </label>
+                    `;
+                });
+
+                userEl.innerHTML = `
+                    <div>
+                        <p class="font-bold">${user.name}</p>
+                        <p class="text-xs text-gray-400 font-mono">${user.id}</p>
+                    </div>
+                    <div class="flex space-x-4">
+                        ${optionsHTML}
+                    </div>
+                `;
+                userList.appendChild(userEl);
+            });
+        }
+
+        // --- DATA SAVING ---
+        document.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('save-room-btn')) {
+                const roomId = e.target.dataset.id;
+                const inputs = document.querySelectorAll(`input[data-id="${roomId}"]`);
+                const updateData = {};
+                
+                inputs.forEach(input => {
+                    // Encrypt data before saving
+                    updateData[input.dataset.field] = encryptData(input.value, MASTER_ENCRYPTION_KEY);
+                });
+                
+                e.target.textContent = "Saving...";
+                const roomDocRef = doc(db, "rooms", roomId);
+                await updateDoc(roomDocRef, updateData);
+                e.target.textContent = "Saved!";
+                setTimeout(() => { e.target.textContent = "Save Changes"; }, 2000);
+            }
+        });
+
+        document.addEventListener('change', async (e) => {
+            if (e.target.classList.contains('user-assignment-cb')) {
+                const uid = e.target.dataset.uid;
+                const roomName = e.target.dataset.room;
+                const isChecked = e.target.checked;
+                
+                const room = roomsData[roomName];
+                let allowedUsers = room.allowedUsers || [];
+                
+                if (isChecked) {
+                    if (!allowedUsers.includes(uid)) {
+                        allowedUsers.push(uid);
+                    }
+                } else {
+                    allowedUsers = allowedUsers.filter(id => id !== uid);
+                }
+
+                const roomDocRef = doc(db, "rooms", roomName);
+                await updateDoc(roomDocRef, { allowedUsers: allowedUsers });
+                // Update local data to prevent full reload
+                roomsData[roomName].allowedUsers = allowedUsers;
+            }
+        });
+        
+        addRoomBtn.addEventListener('click', async () => {
+            const newRoomName = prompt("Enter new room name (e.g., Team3):");
+            if (newRoomName && newRoomName.trim() !== '') {
+                const roomDocRef = doc(db, "rooms", newRoomName);
+
+                // Encrypt the default data before creating the new room
+                await setDoc(roomDocRef, {
+                    roomId: encryptData(`id-${newRoomName.toLowerCase()}`, MASTER_ENCRYPTION_KEY),
+                    password: encryptData("changeme", MASTER_ENCRYPTION_KEY),
+                    cipherPhrase: encryptData("changeme", MASTER_ENCRYPTION_KEY),
+                    allowedUsers: []
+                });
+
+                alert("Room created! Refreshing data...");
+                await loadData();
+            }
+        });
+        
+        encryptAllBtn.addEventListener('click', async () => {
+            if (!confirm("This will re-encrypt and save all room data based on the values currently shown on the screen. Are you sure?")) {
+                return;
+            }
+            
+            encryptAllBtn.textContent = "Encrypting...";
+            encryptAllBtn.disabled = true;
+
+            const batch = writeBatch(db);
+
+            Object.keys(roomsData).forEach(roomId => {
+                const roomDocRef = doc(db, "rooms", roomId);
+                const inputs = document.querySelectorAll(`input[data-id="${roomId}"]`);
+                const updateData = {};
+
+                inputs.forEach(input => {
+                    updateData[input.dataset.field] = encryptData(input.value, MASTER_ENCRYPTION_KEY);
+                });
+                
+                batch.update(roomDocRef, updateData);
+            });
+
+            try {
+                await batch.commit();
+                alert("All rooms have been successfully encrypted and saved.");
+            } catch (error) {
+                console.error("Batch encryption failed: ", error);
+                alert("An error occurred during the encryption process. Check the console for details.");
+            } finally {
+                encryptAllBtn.textContent = "Encrypt & Save All Rooms";
+                encryptAllBtn.disabled = false;
+            }
+        });
+
+    </script>
+</body>
+</html>
+
